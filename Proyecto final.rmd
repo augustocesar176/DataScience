@@ -1,0 +1,177 @@
+---
+title: "Proyecto final"
+author: "Alejandro Sánchez, Cesar Dominguez"
+date: '2020-11-12'
+geometry: left=1cm,right=1cm,top=1cm,bottom=1cm
+output:
+  pdf_document: default
+
+---
+```{r setup, include = FALSE}
+
+# Limpiando entorno
+rm(list=ls())
+setwd("~")
+
+#Cargando paquetes
+library(datos)
+library(ggplot2)
+library(dplyr)
+library(gmodels)
+library('C50')
+library(tidyverse)
+library(kableExtra)
+```
+
+
+# **Planteamiento del problema**
+## **P1: ¿Qué día de la semana hay más visitantes?**
+  + Filtrar: obtener los registros solo de visitantes (visitor).
+  + Agrupar: por día de la semana.
+  + Colapsar: contar los registros por día de la semana.
+
+## **P2:¿Cuál oficina recibe más visitantes?**
+  + Filtrar: obtener los registros solo de visitantes (visitor).
+  + Agrupar: por día de la semana.
+  + Colapsar: contar los registros por oficina.
+
+## **P3: ¿Cuál es el tiempo promedio de la sesión por día de la semana?**
+  + Filtrar: obtener los registros solo de visitantes (visitor).
+  + Agrupar: por día de la semana.
+  + Colapsar: contar los registros por día de la semana.
+  + Calcular: promedio de sesión por día de la semana.
+
+## **P4: ¿Cuál es la hora con más visitas?**
+  + Filtrar: obtener los registros solo de visitantes (visitor).
+  + Agrupar: por hora.
+  + Colapsar: contar los registros por hora.
+
+## Contamos con datos sobre sensores de la empresa Klustera con los siguientes resultados
+### **¿Cuántos visitantes por día se tuvo?**
+
+```{r,echo=FALSE}
+# a) Preparar los datos:
+dir1 <- "~"
+wbcd <- read.csv(paste(dir1, "e.csv", sep="/"), stringsAsFactors = FALSE) 
+wbcd <- wbcd[-1]
+wbcd <- wbcd[-1]
+colnames(wbcd) <- c('oficina','mes','dia','dia_semana','hora','visitante','tiempo')
+
+
+# recodificamos la columna visitante como factor
+# los algoritmos requieren que el valor "objetivo" (columna de respuestas) sea un factor 
+
+wbcd$visitante <- factor(wbcd$visitante, levels = c("true", "false"), labels = c("Visitante", "No visitante"))
+wbcd$dia_semana <- factor(wbcd$dia_semana, levels = c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'), labels = c("Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"))
+
+view(wbcd)
+tempo <- wbcd %>%
+  filter(visitante=="Visitante") %>%
+  group_by(dia_semana) %>%
+  count() %>%
+  mutate(total1=n)
+  # b) Graficar datos
+gr <- ggplot(tempo, aes(x=dia_semana, y=total1)) +
+  geom_point()
+gr
+
+```
+
+
+### **¿Promedio de tiempo por día de la semana?**
+
+```{r,echo=FALSE}
+tempo2 <- wbcd %>%
+  filter(visitante=="Visitante") %>%
+  group_by(dia_semana) %>%
+  summarise(mediana = median(tiempo), Desv_std = format(round(sd(tiempo),2), nsmall=2),.groups = 'drop') 
+  #ungroup()
+# b) Graficar datos
+gr <- ggplot(tempo2, aes(x=dia_semana, y=mediana)) +
+  geom_point()
+gr
+
+```
+
+### **¿Cuántos visitantes por día y por oficina se tuvieron?**
+```{r,echo=FALSE}
+tempo3 <- wbcd %>%
+  filter(visitante=="Visitante") %>%
+  group_by(oficina,dia_semana) %>%
+  count() %>%
+  mutate(total2=n)
+  #ungroup()
+# b) Graficar datos
+gr <- ggplot(tempo3, aes(x=dia_semana, y=total2)) +
+  geom_point()
+gr
+
+```
+
+### **¿Cuantos Visitantes se tuvieron por hora en promedio?**
+
+```{r,echo=FALSE}
+tempo4 <- wbcd %>%
+  filter(visitante=="Visitante") %>%
+  group_by(hora) %>%
+  count() %>%
+  mutate(total3=n)
+# b) Graficar datos
+gr <- ggplot(tempo4, aes(x=hora, y=total3)) +
+  geom_point()
+gr
+
+```
+
+
+## **Resultados en forma tabular**
+
+
+```{r,echo=FALSE}
+
+kable(tempo,digits = 2, caption = "Visitantes por día de la semana")
+kable(tempo2,digits = 2, caption = "Tiempo promedio por día de la semana")
+kable(tempo3,digits = 2, caption = "Visitantes por oficina y día de la semana")
+kable(tempo4,digits = 2, caption = "Visitantes por hora")
+```
+
+
+## **Entrenamiento del modelo de clasificación (decision trees)**
+
+```{r,echo=FALSE}
+## Entrenamiento
+# separamos la DB en un set como entrenamiento y otro como prueba
+nfilas <- floor(nrow(wbcd) * .80)
+set.seed(123)
+index <- sample(1:nrow(wbcd), nfilas) # 80%
+wbcd_train <- wbcd[index, -6] # Obtener solo las muestras
+wbcd_test <- wbcd[-index, -6] # Todo menos las muestras
+wbcd_train_labels <- wbcd[index, 6]
+#wbcd_train_labels <- wbcd_train_labels$visitor
+wbcd_test_labels <- wbcd[-index, 6]
+# Guardamos la clasificación de cada uno (B o M) de la primera columna
+#wbcd_train_labels <- wbcd[1:nfilas, 1]
+#wbcd_test_labels <- wbcd[(nfilas+1):nfilas, 1]
+# Generando el modelo
+wbcd_model <- C5.0(wbcd_train, wbcd_train_labels)
+wbcd_model
+summary(wbcd_model)
+## ------------- ------------- ------------- ------------- -------------
+# Evaluamos el modelo
+# Creamos un vector con las predicciones sobre nuestos datos de pruebas
+wbcd_pred <- predict(wbcd_model, wbcd_test)
+CrossTable(wbcd_test_labels, wbcd_pred,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+```
+## ------------- ------------- ------------- ------------- -------------
+# boosts
+# 
+wbcd_boost10_model <- C5.0(wbcd_train, wbcd_train_labels,trials = 10)
+wbcd_boost10_model
+summary(wbcd_boost10_model)
+
+wbcd_boost_pred10 <- predict(wbcd_boost10_model, wbcd_test)
+CrossTable(wbcd_test_labels, wbcd_boost_pred10,
+           prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+           dnn = c('actual', 'predicción'))
+           
